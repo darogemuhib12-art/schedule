@@ -1,0 +1,1667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ChronoSync — Schedule Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        syne: ['Syne', 'sans-serif'],
+        mono: ['DM Mono', 'monospace'],
+        sans: ['DM Sans', 'sans-serif'],
+      }
+    }
+  }
+}
+</script>
+<style>
+  /* ─── CSS Variables & Base ─── */
+  :root {
+    --bg: #080b10;
+    --surface: #0d1117;
+    --surface2: #111820;
+    --surface3: #16202e;
+    --border: rgba(255,255,255,0.06);
+    --border2: rgba(255,255,255,0.1);
+    --gold: #e8a838;
+    --gold2: #f5c96a;
+    --gold-dim: rgba(232,168,56,0.12);
+    --gold-glow: rgba(232,168,56,0.25);
+    --text: #e8edf4;
+    --text2: #8b98ab;
+    --text3: #4d5e72;
+    --red: #e85858;
+    --red-dim: rgba(232,88,88,0.12);
+    --green: #4ade80;
+    --green-dim: rgba(74,222,128,0.12);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --orange: #fb923c;
+    --orange-dim: rgba(251,146,60,0.12);
+    --cyan: #22d3ee;
+    --cyan-dim: rgba(34,211,238,0.12);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  html { scroll-behavior: smooth; }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
+
+  /* ─── Noise Texture Overlay ─── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.4;
+  }
+
+  /* ─── Sidebar ─── */
+  #sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 240px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  #sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 39;
+    backdrop-filter: blur(2px);
+  }
+
+  @media (max-width: 768px) {
+    #sidebar { transform: translateX(-100%); }
+    #sidebar.open { transform: translateX(0); }
+    #sidebar-overlay.open { display: block; }
+    #main { margin-left: 0 !important; }
+  }
+
+  #main { margin-left: 240px; min-height: 100vh; position: relative; z-index: 1; }
+
+  /* ─── Nav Items ─── */
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text2);
+    transition: all 0.2s;
+    margin: 1px 8px;
+    position: relative;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active {
+    background: var(--gold-dim);
+    color: var(--gold);
+    border: 1px solid rgba(232,168,56,0.2);
+  }
+  .nav-item .badge {
+    margin-left: auto;
+    background: var(--surface3);
+    color: var(--text2);
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 1px 6px;
+    border-radius: 20px;
+    min-width: 20px;
+    text-align: center;
+  }
+  .nav-item.active .badge { background: var(--gold-glow); color: var(--gold); }
+
+  /* ─── Cards ─── */
+  .task-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    animation: cardIn 0.35s cubic-bezier(0.4,0,0.2,1) both;
+  }
+  .task-card:hover {
+    border-color: var(--border2);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .task-card.completed { opacity: 0.55; }
+  .task-card.missed { border-left: 2px solid var(--red); }
+  .task-card.urgent { border-left: 2px solid var(--gold); }
+
+  .task-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    border-radius: 3px 0 0 3px;
+    transition: opacity 0.2s;
+  }
+
+  @keyframes cardIn {
+    from { opacity:0; transform: translateY(12px); }
+    to { opacity:1; transform: translateY(0); }
+  }
+
+  /* ─── Stat Cards ─── */
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    transition: all 0.2s;
+  }
+  .stat-card:hover { border-color: var(--border2); }
+
+  /* ─── Modal ─── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .modal-backdrop.open { opacity: 1; pointer-events: all; }
+  .modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: scale(0.94) translateY(12px);
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+  }
+  .modal-backdrop.open .modal-box { transform: scale(1) translateY(0); }
+
+  /* ─── Form Inputs ─── */
+  .field {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    width: 100%;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+  .field:focus { border-color: rgba(232,168,56,0.5); box-shadow: 0 0 0 3px rgba(232,168,56,0.08); }
+  .field::placeholder { color: var(--text3); }
+  select.field option { background: var(--surface2); color: var(--text); }
+  textarea.field { resize: vertical; min-height: 80px; }
+
+  /* ─── Buttons ─── */
+  .btn-primary {
+    background: var(--gold);
+    color: #080b10;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .btn-primary:hover { background: var(--gold2); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(232,168,56,0.35); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .btn-ghost:hover { border-color: var(--border2); color: var(--text); background: var(--surface2); }
+  .btn-danger {
+    background: var(--red-dim);
+    border: 1px solid rgba(232,88,88,0.25);
+    color: var(--red);
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .btn-danger:hover { background: rgba(232,88,88,0.22); }
+
+  /* ─── Toast ─── */
+  #toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-size: 13.5px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    animation: toastIn 0.3s cubic-bezier(0.4,0,0.2,1) both;
+    pointer-events: all;
+    max-width: 320px;
+  }
+  .toast.out { animation: toastOut 0.3s cubic-bezier(0.4,0,0.2,1) forwards; }
+  @keyframes toastIn {
+    from { opacity:0; transform: translateX(20px) scale(0.95); }
+    to { opacity:1; transform: translateX(0) scale(1); }
+  }
+  @keyframes toastOut {
+    to { opacity:0; transform: translateX(20px) scale(0.95); }
+  }
+
+  /* ─── FAB ─── */
+  #fab {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    background: var(--gold);
+    color: #080b10;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 8px 28px rgba(232,168,56,0.4);
+    z-index: 50;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    display: none;
+  }
+  #fab:hover { transform: scale(1.08) rotate(90deg); background: var(--gold2); }
+
+  /* ─── Priority Pills ─── */
+  .priority-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .p-low { background: var(--blue-dim); color: var(--blue); }
+  .p-medium { background: var(--gold-dim); color: var(--gold); }
+  .p-high { background: var(--red-dim); color: var(--red); }
+
+  /* ─── Category Dot ─── */
+  .cat-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  /* ─── Status Badge ─── */
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* ─── Progress Bar ─── */
+  .progress-bar-track {
+    background: var(--surface3);
+    border-radius: 99px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--gold), var(--gold2));
+    transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  /* ─── Search ─── */
+  .search-wrap { position: relative; }
+  .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+  .search-wrap input { padding-left: 38px; }
+
+  /* ─── Calendar Grid ─── */
+  .cal-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .cal-day:hover { background: var(--surface3); }
+  .cal-day.today { background: var(--gold-dim); color: var(--gold); font-weight: 700; }
+  .cal-day.has-task::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--gold);
+  }
+  .cal-day.selected { background: var(--gold); color: #080b10; font-weight: 700; }
+  .cal-day.other-month { color: var(--text3); }
+
+  /* ─── Checkbox ─── */
+  .task-checkbox {
+    width: 18px; height: 18px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border2);
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .task-checkbox.checked { background: var(--gold); border-color: var(--gold); }
+  .task-checkbox:hover { border-color: var(--gold); }
+
+  /* ─── Countdown chip ─── */
+  .countdown-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--gold-dim);
+    border: 1px solid rgba(232,168,56,0.18);
+    color: var(--gold);
+    border-radius: 8px;
+    padding: 3px 9px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+  }
+
+  /* ─── Empty State ─── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 24px;
+    text-align: center;
+    gap: 12px;
+  }
+
+  /* ─── Loading skeleton ─── */
+  .skeleton {
+    background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3) 50%, var(--surface2) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 8px;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ─── Floating clock ─── */
+  #clock-display {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text2);
+    letter-spacing: 0.06em;
+  }
+
+  /* ─── Filter tabs ─── */
+  .filter-tab {
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    color: var(--text2);
+    white-space: nowrap;
+    transition: all 0.18s;
+  }
+  .filter-tab:hover { color: var(--text); background: var(--surface2); }
+  .filter-tab.active { background: var(--gold-dim); color: var(--gold); border-color: rgba(232,168,56,0.2); }
+
+  /* ─── Hamburger ─── */
+  #hamburger { display: none; }
+  @media (max-width: 768px) {
+    #hamburger { display: flex; }
+    #fab { display: flex; }
+  }
+  @media (min-width: 769px) {
+    #fab { display: none; }
+  }
+
+  /* ─── Animations ─── */
+  @keyframes pulse-gold {
+    0%, 100% { box-shadow: 0 0 0 0 var(--gold-glow); }
+    50% { box-shadow: 0 0 0 8px transparent; }
+  }
+  .pulse-anim { animation: pulse-gold 2.5s infinite; }
+
+  /* ─── Tooltip ─── */
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface3);
+    color: var(--text);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    pointer-events: none;
+    border: 1px solid var(--border2);
+    z-index: 99;
+  }
+
+  /* ─── Section fade ─── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ─── Icon micro ─── */
+  .icon { display: inline-flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ SIDEBAR ═══════ -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+<aside id="sidebar">
+  <div style="padding:20px 16px 12px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:32px;height:32px;background:var(--gold);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#080b10" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div>
+        <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:800;letter-spacing:-0.02em;">ChronoSync</div>
+        <div id="clock-display">--:--:-- --</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 8px;margin-bottom:8px;">
+    <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);padding:0 8px 6px;">Navigation</div>
+    <div class="nav-item active" onclick="showSection('dashboard')" data-section="dashboard">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" onclick="showSection('tasks')" data-section="tasks">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      All Tasks
+      <span class="badge" id="badge-tasks">0</span>
+    </div>
+    <div class="nav-item" onclick="showSection('today')" data-section="today">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Today
+      <span class="badge" id="badge-today">0</span>
+    </div>
+    <div class="nav-item" onclick="showSection('upcoming')" data-section="upcoming">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Upcoming
+      <span class="badge" id="badge-upcoming">0</span>
+    </div>
+    <div class="nav-item" onclick="showSection('completed')" data-section="completed">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      Completed
+      <span class="badge" id="badge-completed">0</span>
+    </div>
+    <div class="nav-item" onclick="showSection('missed')" data-section="missed">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      Missed
+      <span class="badge" id="badge-missed">0</span>
+    </div>
+    <div class="nav-item" onclick="showSection('past')" data-section="past">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Past
+      <span class="badge" id="badge-past">0</span>
+    </div>
+    <div class="nav-item" onclick="showSection('calendar')" data-section="calendar">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/></svg>
+      Calendar
+    </div>
+  </div>
+
+  <div style="padding:0 8px;">
+    <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);padding:0 8px 6px;">Manage</div>
+    <div class="nav-item" onclick="openAddModal()">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      Add Task
+    </div>
+    <div class="nav-item" onclick="exportJSON()">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export JSON
+    </div>
+    <div class="nav-item" onclick="document.getElementById('importFile').click()">
+      <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Import JSON
+    </div>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)"/>
+  </div>
+
+  <!-- Daily Progress -->
+  <div style="margin-top:auto;padding:12px 16px;border-top:1px solid var(--border);">
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px;display:flex;justify-content:space-between;">
+      <span>Daily Progress</span>
+      <span style="font-family:'DM Mono',monospace;color:var(--gold);" id="progress-pct">0%</span>
+    </div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <div style="font-size:10.5px;color:var(--text3);margin-top:5px;" id="progress-label">0 of 0 tasks done today</div>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════ MAIN ═══════ -->
+<main id="main">
+
+  <!-- Sticky Header -->
+  <header style="position:sticky;top:0;z-index:30;background:rgba(8,11,16,0.85);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0 24px;height:60px;display:flex;align-items:center;gap:12px;">
+    <button id="hamburger" onclick="openSidebar()" style="background:transparent;border:1px solid var(--border);border-radius:9px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div style="flex:1;" id="header-title">
+      <span style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;">Dashboard</span>
+    </div>
+    <!-- Search -->
+    <div class="search-wrap" style="flex:0 1 260px;">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--text3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="field" id="search-input" type="text" placeholder="Search tasks..." oninput="handleSearch()" style="padding:8px 12px 8px 36px;font-size:13px;"/>
+    </div>
+    <!-- Add btn desktop -->
+    <button class="btn-primary" onclick="openAddModal()" style="display:none;padding:8px 16px;font-size:13px;" id="desktop-add-btn">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Task
+    </button>
+  </header>
+
+  <div style="padding:24px;max-width:960px;">
+
+    <!-- ─── DASHBOARD SECTION ─── -->
+    <div id="section-dashboard" class="section active">
+      <!-- Greeting -->
+      <div style="margin-bottom:24px;">
+        <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:800;letter-spacing:-0.02em;line-height:1.2;" id="greeting-text">Good Morning ☀️</div>
+        <div style="color:var(--text2);font-size:13.5px;margin-top:4px;" id="date-display">—</div>
+      </div>
+
+      <!-- Stat Cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px;">
+        <div class="stat-card" onclick="showSection('tasks')" style="cursor:pointer;">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);margin-bottom:10px;">Total</div>
+          <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;" id="stat-total">0</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">All tasks</div>
+        </div>
+        <div class="stat-card" onclick="showSection('today')" style="cursor:pointer;border-color:rgba(232,168,56,0.2);">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;">Today</div>
+          <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--gold);" id="stat-today">0</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Scheduled</div>
+        </div>
+        <div class="stat-card" onclick="showSection('completed')" style="cursor:pointer;">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--green);margin-bottom:10px;">Done</div>
+          <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--green);" id="stat-done">0</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Completed</div>
+        </div>
+        <div class="stat-card" onclick="showSection('missed')" style="cursor:pointer;">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--red);margin-bottom:10px;">Missed</div>
+          <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--red);" id="stat-missed">0</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Overdue</div>
+        </div>
+        <div class="stat-card" onclick="showSection('upcoming')" style="cursor:pointer;">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--blue);margin-bottom:10px;">Upcoming</div>
+          <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--blue);" id="stat-upcoming">0</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Future tasks</div>
+        </div>
+      </div>
+
+      <!-- Next Task Countdown -->
+      <div id="next-task-banner" style="display:none;background:var(--surface);border:1px solid rgba(232,168,56,0.2);border-radius:14px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px;">
+        <div style="width:40px;height:40px;background:var(--gold-dim);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;" class="pulse-anim">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Next Task</div>
+          <div style="font-size:14px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="next-task-title">—</div>
+        </div>
+        <div class="countdown-chip" id="next-task-countdown">—</div>
+      </div>
+
+      <!-- Today's Tasks -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;">Today's Tasks</div>
+        <button class="btn-ghost" onclick="showSection('today')" style="padding:6px 12px;font-size:12px;">View All →</button>
+      </div>
+      <div id="dashboard-tasks"></div>
+    </div>
+
+    <!-- ─── ALL TASKS ─── -->
+    <div id="section-tasks" class="section">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+        <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;flex:1;">All Tasks</div>
+        <button class="btn-primary" onclick="openAddModal()" style="padding:8px 16px;font-size:13px;">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Task
+        </button>
+      </div>
+      <div id="tasks-list"></div>
+    </div>
+
+    <!-- ─── TODAY ─── -->
+    <div id="section-today" class="section">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:20px;">Today</div>
+      <div id="today-list"></div>
+    </div>
+
+    <!-- ─── UPCOMING ─── -->
+    <div id="section-upcoming" class="section">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:20px;">Upcoming</div>
+      <div id="upcoming-list"></div>
+    </div>
+
+    <!-- ─── COMPLETED ─── -->
+    <div id="section-completed" class="section">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:20px;">Completed</div>
+      <div id="completed-list"></div>
+    </div>
+
+    <!-- ─── MISSED ─── -->
+    <div id="section-missed" class="section">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:20px;">Missed / Overdue</div>
+      <div id="missed-list"></div>
+    </div>
+
+    <!-- ─── PAST ─── -->
+    <div id="section-past" class="section">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:20px;">Past Schedules</div>
+      <div id="past-list"></div>
+    </div>
+
+    <!-- ─── CALENDAR ─── -->
+    <div id="section-calendar" class="section">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:20px;">Calendar</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" id="cal-grid-wrap">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;">
+          <!-- Calendar header -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <button onclick="calPrev()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;width:32px;height:32px;cursor:pointer;color:var(--text2);display:flex;align-items:center;justify-content:center;">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px;" id="cal-month-label">—</div>
+            <button onclick="calNext()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;width:32px;height:32px;cursor:pointer;color:var(--text2);display:flex;align-items:center;justify-content:center;">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
+            <div style="text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);padding:4px 0;">Su</div>
+            <div style="text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);padding:4px 0;">Mo</div>
+            <div style="text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);padding:4px 0;">Tu</div>
+            <div style="text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);padding:4px 0;">We</div>
+            <div style="text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);padding:4px 0;">Th</div>
+            <div style="text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);padding:4px 0;">Fr</div>
+            <div style="text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);padding:4px 0;">Sa</div>
+          </div>
+          <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;"></div>
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text2);" id="cal-selected-label">Select a date to see tasks</div>
+          <div id="cal-tasks-list"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /padding wrapper -->
+</main>
+
+<!-- FAB -->
+<button id="fab" onclick="openAddModal()">
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+</button>
+
+<!-- ═══════════════════════════════════════════ ADD/EDIT MODAL ═══════ -->
+<div class="modal-backdrop" id="task-modal" onkeydown="modalKeydown(event)">
+  <div class="modal-box">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;" id="modal-title">Add Task</div>
+      <button onclick="closeModal('task-modal')" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;width:32px;height:32px;cursor:pointer;color:var(--text2);display:flex;align-items:center;justify-content:center;">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding:20px 22px;display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px;">Task Title *</label>
+        <input class="field" id="m-title" type="text" placeholder="What needs to be done?" maxlength="120"/>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px;">Description</label>
+        <textarea class="field" id="m-desc" placeholder="Add more details..."></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px;">Date *</label>
+          <input class="field" id="m-date" type="date"/>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px;">Time *</label>
+          <input class="field" id="m-time" type="time"/>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px;">Priority</label>
+          <select class="field" id="m-priority">
+            <option value="low">🔵 Low</option>
+            <option value="medium" selected>🟡 Medium</option>
+            <option value="high">🔴 High</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px;">Category</label>
+          <select class="field" id="m-category">
+            <option value="work">💼 Work</option>
+            <option value="personal">👤 Personal</option>
+            <option value="health">❤️ Health</option>
+            <option value="study">📚 Study</option>
+            <option value="meeting">🤝 Meeting</option>
+            <option value="finance">💰 Finance</option>
+            <option value="other">⚡ Other</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px;">Notes / Location</label>
+        <input class="field" id="m-notes" type="text" placeholder="Location, link, or extra notes..."/>
+      </div>
+    </div>
+    <div style="padding:16px 22px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn-ghost" onclick="closeModal('task-modal')">Cancel</button>
+      <button class="btn-primary" id="modal-save-btn" onclick="saveTask()">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Task
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ DELETE CONFIRM ═══════ -->
+<div class="modal-backdrop" id="delete-modal">
+  <div class="modal-box" style="max-width:380px;">
+    <div style="padding:24px 22px;text-align:center;">
+      <div style="width:48px;height:48px;background:var(--red-dim);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="var(--red)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </div>
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:8px;">Delete Task?</div>
+      <div style="color:var(--text2);font-size:13.5px;line-height:1.5;">This will permanently delete "<span id="delete-task-name" style="color:var(--text);font-weight:500;"></span>". This action cannot be undone.</div>
+    </div>
+    <div style="padding:0 22px 20px;display:flex;gap:10px;">
+      <button class="btn-ghost" onclick="closeModal('delete-modal')" style="flex:1;justify-content:center;">Cancel</button>
+      <button class="btn-danger" onclick="confirmDelete()" style="flex:1;justify-content:center;">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ TOAST ═══════ -->
+<div id="toast-container"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  CHRONOSYNC — Complete Schedule Tracker
+//  Timezone: Asia/Kolkata (IST, UTC+5:30)
+// ══════════════════════════════════════════════════════════════
+
+// ─── CONSTANTS ───────────────────────────────────────────────
+const TZ = 'Asia/Kolkata';
+const STORAGE_KEY = 'chronosync_tasks_v2';
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const CAT_COLORS = {
+  work:     '#60a5fa',
+  personal: '#a78bfa',
+  health:   '#4ade80',
+  study:    '#fb923c',
+  meeting:  '#f472b6',
+  finance:  '#e8a838',
+  other:    '#22d3ee'
+};
+const CAT_ICONS = { work:'💼', personal:'👤', health:'❤️', study:'📚', meeting:'🤝', finance:'💰', other:'⚡' };
+
+// ─── STATE ───────────────────────────────────────────────────
+let tasks = [];
+let editingId = null;
+let pendingDeleteId = null;
+let currentSection = 'dashboard';
+let calDate = nowIST();
+let calSelectedDate = null;
+let searchQuery = '';
+
+// ─── INIT ────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadTasks();
+  startClock();
+  updateGreeting();
+  renderAll();
+  setDefaultDate();
+  renderCalendar();
+  showDesktopAddBtn();
+
+  // Keyboard shortcut: N = new task
+  document.addEventListener('keydown', e => {
+    if (e.key === 'n' && !isInputFocused()) { openAddModal(); e.preventDefault(); }
+    if (e.key === 'Escape') { closeAllModals(); }
+  });
+
+  // Auto-refresh status every minute
+  setInterval(() => { renderAll(); }, 60000);
+  setInterval(updateNextTaskCountdown, 10000);
+});
+
+function showDesktopAddBtn() {
+  const btn = document.getElementById('desktop-add-btn');
+  if (btn && window.innerWidth >= 769) btn.style.display = 'inline-flex';
+  window.addEventListener('resize', () => {
+    if (btn) btn.style.display = window.innerWidth >= 769 ? 'inline-flex' : 'none';
+  });
+}
+
+// ─── IST TIME HELPERS ────────────────────────────────────────
+function nowIST() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
+}
+
+function todayIST() {
+  const d = nowIST();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+function pad(n) { return String(n).padStart(2,'0'); }
+
+function formatDateLabel(dateStr) {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  return `${DAYS[dt.getDay()]}, ${d} ${SHORT_MONTHS[m-1]} ${y}`;
+}
+
+function formatTimeLabel(timeStr) {
+  if (!timeStr) return '';
+  const [h, min] = timeStr.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 || 12;
+  return `${hh}:${pad(min)} ${ampm}`;
+}
+
+function getTaskDateTime(task) {
+  // Returns a Date object in local (IST) time
+  const [y,m,d] = task.date.split('-').map(Number);
+  const [hh,mm] = (task.time||'00:00').split(':').map(Number);
+  return new Date(y, m-1, d, hh, mm);
+}
+
+function getTaskStatus(task) {
+  if (task.completed) return 'completed';
+  const now = nowIST();
+  const taskDT = getTaskDateTime(task);
+  const today = todayIST();
+  if (task.date < today) return 'missed';
+  if (task.date === today) {
+    if (taskDT < now) return 'missed';
+    return 'today';
+  }
+  return 'upcoming';
+}
+
+// ─── STORAGE ─────────────────────────────────────────────────
+function loadTasks() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    tasks = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(tasks)) tasks = [];
+  } catch { tasks = []; }
+}
+
+function saveTasks() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
+  catch { showToast('⚠️ Storage failed — browser storage may be full', 'error'); }
+}
+
+// ─── CLOCK ───────────────────────────────────────────────────
+function startClock() {
+  function tick() {
+    const now = nowIST();
+    let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    document.getElementById('clock-display').textContent = `${pad(h)}:${pad(m)}:${pad(s)} ${ampm}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+function updateGreeting() {
+  const h = nowIST().getHours();
+  let g = 'Good Evening 🌙';
+  if (h >= 5 && h < 12) g = 'Good Morning ☀️';
+  else if (h >= 12 && h < 17) g = 'Good Afternoon 🌤️';
+  else if (h >= 17 && h < 21) g = 'Good Evening 🌆';
+  document.getElementById('greeting-text').textContent = g;
+  const now = nowIST();
+  document.getElementById('date-display').textContent =
+    `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()} · India Standard Time`;
+}
+
+// ─── RENDER ALL ───────────────────────────────────────────────
+function renderAll() {
+  updateBadges();
+  updateStats();
+  renderDashboard();
+  renderSection('tasks', getFilteredTasks('all'));
+  renderSection('today', getFilteredTasks('today'));
+  renderSection('upcoming', getFilteredTasks('upcoming'));
+  renderSection('completed', getFilteredTasks('completed'));
+  renderSection('missed', getFilteredTasks('missed'));
+  renderSection('past', getFilteredTasks('past'));
+  updateProgress();
+  updateNextTaskCountdown();
+}
+
+function getFilteredTasks(filter) {
+  let list = [...tasks];
+  const today = todayIST();
+
+  // Apply search
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    list = list.filter(t =>
+      t.title.toLowerCase().includes(q) ||
+      (t.desc||'').toLowerCase().includes(q) ||
+      (t.notes||'').toLowerCase().includes(q) ||
+      (t.category||'').toLowerCase().includes(q)
+    );
+  }
+
+  switch (filter) {
+    case 'today':
+      list = list.filter(t => t.date === today);
+      break;
+    case 'upcoming':
+      list = list.filter(t => t.date > today && !t.completed);
+      break;
+    case 'completed':
+      list = list.filter(t => t.completed);
+      break;
+    case 'missed':
+      list = list.filter(t => !t.completed && getTaskStatus(t) === 'missed');
+      break;
+    case 'past':
+      list = list.filter(t => t.date < today);
+      break;
+    case 'all':
+    default:
+      break;
+  }
+
+  // Sort: by date, then time
+  list.sort((a, b) => {
+    const da = (a.date||'') + (a.time||'');
+    const db = (b.date||'') + (b.time||'');
+    return da.localeCompare(db);
+  });
+
+  return list;
+}
+
+function renderSection(name, list) {
+  const el = document.getElementById(`${name}-list`);
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = emptyState(name);
+    return;
+  }
+  el.innerHTML = list.map(t => taskCard(t)).join('');
+}
+
+function renderDashboard() {
+  const el = document.getElementById('dashboard-tasks');
+  if (!el) return;
+  const today = todayIST();
+  let list = tasks.filter(t => t.date === today);
+  list.sort((a,b) => (a.time||'').localeCompare(b.time||''));
+
+  if (!list.length) {
+    el.innerHTML = emptyState('dashboard');
+    return;
+  }
+  // Show max 5 on dashboard
+  const show = list.slice(0, 5);
+  el.innerHTML = show.map(t => taskCard(t, true)).join('');
+  if (list.length > 5) {
+    el.innerHTML += `<div style="text-align:center;margin-top:12px;">
+      <button class="btn-ghost" onclick="showSection('today')" style="font-size:12.5px;">See all ${list.length} tasks today →</button>
+    </div>`;
+  }
+}
+
+// ─── TASK CARD HTML ───────────────────────────────────────────
+function taskCard(t, compact = false) {
+  const status = getTaskStatus(t);
+  const catColor = CAT_COLORS[t.category] || '#8b98ab';
+  const catIcon = CAT_ICONS[t.category] || '⚡';
+  const now = nowIST();
+  const taskDT = getTaskDateTime(t);
+  const diffMs = taskDT - now;
+  const isUrgent = !t.completed && diffMs > 0 && diffMs < 60 * 60 * 1000; // within 1hr
+
+  let statusBadge = '';
+  switch (status) {
+    case 'completed':
+      statusBadge = `<span class="status-badge" style="background:var(--green-dim);color:var(--green);">
+        <svg width="9" height="9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Done</span>`;
+      break;
+    case 'missed':
+      statusBadge = `<span class="status-badge" style="background:var(--red-dim);color:var(--red);">
+        <svg width="9" height="9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Missed</span>`;
+      break;
+    case 'today':
+      statusBadge = isUrgent
+        ? `<span class="status-badge" style="background:var(--gold-dim);color:var(--gold);">⚡ Urgent</span>`
+        : `<span class="status-badge" style="background:var(--blue-dim);color:var(--blue);">📅 Today</span>`;
+      break;
+    case 'upcoming':
+      statusBadge = `<span class="status-badge" style="background:var(--purple-dim);color:var(--purple);">🔮 Upcoming</span>`;
+      break;
+  }
+
+  let priorityClass = 'p-low';
+  if (t.priority === 'medium') priorityClass = 'p-medium';
+  if (t.priority === 'high') priorityClass = 'p-high';
+  const priorityLabel = { low:'Low', medium:'Medium', high:'High' }[t.priority||'medium'];
+
+  const borderLeft = status === 'missed' ? 'border-left:2px solid var(--red);'
+    : isUrgent ? 'border-left:2px solid var(--gold);'
+    : status === 'completed' ? 'border-left:2px solid var(--green);'
+    : '';
+
+  return `
+  <div class="task-card" style="${borderLeft}margin-bottom:10px;"
+       onclick="toggleComplete('${t.id}')"
+       ondblclick="openEditModal('${t.id}');event.stopPropagation()">
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+      <!-- Checkbox -->
+      <div class="task-checkbox ${t.completed?'checked':''}" onclick="toggleComplete('${t.id}');event.stopPropagation()">
+        ${t.completed ? `<svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="#080b10" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+      </div>
+      <!-- Content -->
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:5px;">
+          <div style="font-weight:600;font-size:14px;${t.completed?'text-decoration:line-through;color:var(--text2);':''};flex:1;min-width:0;">
+            ${escHtml(t.title)}
+          </div>
+          <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
+            ${statusBadge}
+          </div>
+        </div>
+        ${t.desc && !compact ? `<div style="font-size:12.5px;color:var(--text2);margin-bottom:7px;line-height:1.5;">${escHtml(t.desc)}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <!-- Category -->
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span class="cat-dot" style="background:${catColor};"></span>
+            <span style="font-size:11.5px;color:var(--text2);">${catIcon} ${t.category||'other'}</span>
+          </div>
+          <!-- Date Time -->
+          <div style="display:flex;align-items:center;gap:4px;color:var(--text3);font-size:11.5px;font-family:'DM Mono',monospace;">
+            <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            ${formatDateLabel(t.date)}
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;color:var(--text3);font-size:11.5px;font-family:'DM Mono',monospace;">
+            <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${formatTimeLabel(t.time)}
+          </div>
+          <!-- Priority -->
+          <span class="priority-pill ${priorityClass}">${priorityLabel}</span>
+          ${t.notes && !compact ? `<span style="font-size:11px;color:var(--text3);">📍 ${escHtml(t.notes)}</span>` : ''}
+        </div>
+      </div>
+      <!-- Actions -->
+      <div style="display:flex;gap:4px;flex-shrink:0;opacity:0;transition:opacity 0.2s;" class="card-actions">
+        <button onclick="openEditModal('${t.id}');event.stopPropagation()" data-tip="Edit"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;width:28px;height:28px;cursor:pointer;color:var(--text2);display:flex;align-items:center;justify-content:center;"
+          onmouseenter="this.style.color='var(--gold)'" onmouseleave="this.style.color='var(--text2)'">
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button onclick="openDeleteModal('${t.id}');event.stopPropagation()" data-tip="Delete"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;width:28px;height:28px;cursor:pointer;color:var(--text2);display:flex;align-items:center;justify-content:center;"
+          onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--text2)'">
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Show card actions on hover via CSS
+document.addEventListener('mouseover', e => {
+  const card = e.target.closest('.task-card');
+  if (card) {
+    const actions = card.querySelector('.card-actions');
+    if (actions) actions.style.opacity = '1';
+  }
+});
+document.addEventListener('mouseout', e => {
+  const card = e.target.closest('.task-card');
+  if (!card) {
+    document.querySelectorAll('.card-actions').forEach(a => a.style.opacity = '0');
+  }
+});
+
+// ─── EMPTY STATES ─────────────────────────────────────────────
+function emptyState(type) {
+  const configs = {
+    dashboard: { icon:'📋', title:'Nothing scheduled today', sub:'Enjoy your free day, or add a new task.' },
+    tasks:     { icon:'🗂️', title:'No tasks found', sub:'Add your first task to get started.' },
+    today:     { icon:'📅', title:'Nothing today', sub:'You\'re all caught up for today!' },
+    upcoming:  { icon:'🔮', title:'No upcoming tasks', sub:'Plan ahead and add future tasks.' },
+    completed: { icon:'✅', title:'No completed tasks', sub:'Mark tasks as done to see them here.' },
+    missed:    { icon:'😌', title:'No missed tasks', sub:'Great job staying on schedule!' },
+    past:      { icon:'🗄️', title:'No past records', sub:'Past tasks will appear here.' },
+  };
+  const c = configs[type] || configs.tasks;
+  return `<div class="empty-state">
+    <div style="font-size:40px;margin-bottom:8px;">${c.icon}</div>
+    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--text);">${c.title}</div>
+    <div style="font-size:13px;color:var(--text3);">${c.sub}</div>
+    ${type!=='completed'&&type!=='missed' ? `<button class="btn-primary" onclick="openAddModal()" style="margin-top:14px;font-size:13px;padding:8px 18px;">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Task
+    </button>` : ''}
+  </div>`;
+}
+
+// ─── BADGES & STATS ───────────────────────────────────────────
+function updateBadges() {
+  const today = todayIST();
+  const counts = {
+    tasks: tasks.length,
+    today: tasks.filter(t => t.date === today).length,
+    upcoming: tasks.filter(t => t.date > today && !t.completed).length,
+    completed: tasks.filter(t => t.completed).length,
+    missed: tasks.filter(t => !t.completed && getTaskStatus(t) === 'missed').length,
+    past: tasks.filter(t => t.date < today).length,
+  };
+  for (const [k, v] of Object.entries(counts)) {
+    const el = document.getElementById(`badge-${k}`);
+    if (el) el.textContent = v;
+  }
+}
+
+function updateStats() {
+  const today = todayIST();
+  document.getElementById('stat-total').textContent = tasks.length;
+  document.getElementById('stat-today').textContent = tasks.filter(t => t.date === today).length;
+  document.getElementById('stat-done').textContent = tasks.filter(t => t.completed).length;
+  document.getElementById('stat-missed').textContent = tasks.filter(t => !t.completed && getTaskStatus(t) === 'missed').length;
+  document.getElementById('stat-upcoming').textContent = tasks.filter(t => t.date > today && !t.completed).length;
+}
+
+function updateProgress() {
+  const today = todayIST();
+  const todayTasks = tasks.filter(t => t.date === today);
+  const doneTasks = todayTasks.filter(t => t.completed);
+  const pct = todayTasks.length ? Math.round((doneTasks.length / todayTasks.length) * 100) : 0;
+  document.getElementById('progress-pct').textContent = `${pct}%`;
+  document.getElementById('progress-fill').style.width = `${pct}%`;
+  document.getElementById('progress-label').textContent = `${doneTasks.length} of ${todayTasks.length} tasks done today`;
+}
+
+function updateNextTaskCountdown() {
+  const now = nowIST();
+  const banner = document.getElementById('next-task-banner');
+  const pending = tasks
+    .filter(t => !t.completed && getTaskDateTime(t) > now)
+    .sort((a,b) => getTaskDateTime(a) - getTaskDateTime(b));
+
+  if (!pending.length) {
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+
+  const next = pending[0];
+  const diff = getTaskDateTime(next) - now;
+  if (banner) banner.style.display = 'flex';
+  document.getElementById('next-task-title').textContent = next.title;
+
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+
+  let label = '';
+  if (h > 0) label = `${h}h ${m}m`;
+  else if (m > 0) label = `${m}m ${s}s`;
+  else label = `${s}s`;
+
+  document.getElementById('next-task-countdown').textContent = `in ${label}`;
+}
+
+// ─── TASK CRUD ────────────────────────────────────────────────
+function generateId() {
+  return `t_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+}
+
+function openAddModal() {
+  editingId = null;
+  document.getElementById('modal-title').textContent = 'Add Task';
+  document.getElementById('modal-save-btn').innerHTML = `<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save Task`;
+  clearModalForm();
+  setDefaultDate();
+  openModal('task-modal');
+  setTimeout(() => document.getElementById('m-title').focus(), 300);
+}
+
+function openEditModal(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  editingId = id;
+  document.getElementById('modal-title').textContent = 'Edit Task';
+  document.getElementById('modal-save-btn').innerHTML = `<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Update Task`;
+  document.getElementById('m-title').value = task.title || '';
+  document.getElementById('m-desc').value = task.desc || '';
+  document.getElementById('m-date').value = task.date || '';
+  document.getElementById('m-time').value = task.time || '';
+  document.getElementById('m-priority').value = task.priority || 'medium';
+  document.getElementById('m-category').value = task.category || 'work';
+  document.getElementById('m-notes').value = task.notes || '';
+  openModal('task-modal');
+  setTimeout(() => document.getElementById('m-title').focus(), 300);
+}
+
+function saveTask() {
+  const title = document.getElementById('m-title').value.trim();
+  const date = document.getElementById('m-date').value;
+  const time = document.getElementById('m-time').value;
+
+  if (!title) { showToast('⚠️ Task title is required', 'error'); document.getElementById('m-title').focus(); return; }
+  if (!date) { showToast('⚠️ Please select a date', 'error'); document.getElementById('m-date').focus(); return; }
+  if (!time) { showToast('⚠️ Please select a time', 'error'); document.getElementById('m-time').focus(); return; }
+
+  const taskData = {
+    title,
+    desc: document.getElementById('m-desc').value.trim(),
+    date,
+    time,
+    priority: document.getElementById('m-priority').value,
+    category: document.getElementById('m-category').value,
+    notes: document.getElementById('m-notes').value.trim(),
+  };
+
+  if (editingId) {
+    const idx = tasks.findIndex(t => t.id === editingId);
+    if (idx !== -1) {
+      tasks[idx] = { ...tasks[idx], ...taskData, updatedAt: new Date().toISOString() };
+      showToast('✏️ Task updated successfully', 'success');
+    }
+  } else {
+    tasks.push({
+      id: generateId(),
+      ...taskData,
+      completed: false,
+      createdAt: new Date().toISOString(),
+    });
+    showToast('✅ Task added successfully', 'success');
+  }
+
+  saveTasks();
+  closeModal('task-modal');
+  renderAll();
+  renderCalendar();
+}
+
+function toggleComplete(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  task.completed = !task.completed;
+  task.completedAt = task.completed ? new Date().toISOString() : null;
+  saveTasks();
+  renderAll();
+  if (task.completed) showToast('🎉 Task marked as completed!', 'success');
+  else showToast('↩️ Task marked as pending', 'info');
+}
+
+function openDeleteModal(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  pendingDeleteId = id;
+  document.getElementById('delete-task-name').textContent = task.title;
+  openModal('delete-modal');
+}
+
+function confirmDelete() {
+  if (!pendingDeleteId) return;
+  tasks = tasks.filter(t => t.id !== pendingDeleteId);
+  pendingDeleteId = null;
+  saveTasks();
+  closeModal('delete-modal');
+  renderAll();
+  renderCalendar();
+  showToast('🗑️ Task deleted', 'info');
+}
+
+// ─── MODAL HELPERS ────────────────────────────────────────────
+function openModal(id) {
+  const el = document.getElementById(id);
+  if (el) { el.classList.add('open'); document.body.style.overflow = 'hidden'; }
+}
+
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) { el.classList.remove('open'); document.body.style.overflow = ''; }
+}
+
+function closeAllModals() {
+  ['task-modal','delete-modal'].forEach(closeModal);
+}
+
+function modalKeydown(e) {
+  if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') saveTask();
+}
+
+function clearModalForm() {
+  ['m-title','m-desc','m-notes'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  document.getElementById('m-priority').value = 'medium';
+  document.getElementById('m-category').value = 'work';
+  document.getElementById('m-time').value = '';
+}
+
+function setDefaultDate() {
+  document.getElementById('m-date').value = todayIST();
+}
+
+// Click outside modal to close
+document.querySelectorAll('.modal-backdrop').forEach(el => {
+  el.addEventListener('click', function(e) {
+    if (e.target === this) closeModal(this.id);
+  });
+});
+
+// ─── NAVIGATION ───────────────────────────────────────────────
+function showSection(name) {
+  currentSection = name;
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  const sec = document.getElementById(`section-${name}`);
+  if (sec) sec.classList.add('active');
+
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.section === name);
+  });
+
+  const titles = {
+    dashboard:'Dashboard', tasks:'All Tasks', today:'Today',
+    upcoming:'Upcoming', completed:'Completed', missed:'Missed',
+    past:'Past', calendar:'Calendar'
+  };
+  document.getElementById('header-title').innerHTML =
+    `<span style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;">${titles[name]||name}</span>`;
+
+  closeSidebar();
+  window.scrollTo({ top:0, behavior:'smooth' });
+
+  if (name === 'calendar') renderCalendar();
+}
+
+// ─── SIDEBAR ─────────────────────────────────────────────────
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').classList.add('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ─── SEARCH ──────────────────────────────────────────────────
+function handleSearch() {
+  searchQuery = document.getElementById('search-input').value.trim();
+  renderAll();
+  if (searchQuery && currentSection === 'dashboard') showSection('tasks');
+}
+
+// ─── CALENDAR ────────────────────────────────────────────────
+function renderCalendar() {
+  const y = calDate.getFullYear();
+  const m = calDate.getMonth();
+  document.getElementById('cal-month-label').textContent = `${MONTHS[m]} ${y}`;
+
+  const grid = document.getElementById('cal-grid');
+  if (!grid) return;
+
+  const today = todayIST();
+  const firstDay = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const prevDays = new Date(y, m, 0).getDate();
+
+  // Build set of task dates
+  const taskDates = new Set(tasks.map(t => t.date));
+
+  let cells = [];
+  // Prev month days
+  for (let i = firstDay - 1; i >= 0; i--) {
+    const d = prevDays - i;
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    cells.push(`<div class="cal-day other-month ${taskDates.has(dateStr)?'has-task':''}">${d}</div>`);
+  }
+  // Current month
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${pad(m+1)}-${pad(d)}`;
+    const isToday = dateStr === today;
+    const isSelected = calSelectedDate === dateStr;
+    const hasTasks = taskDates.has(dateStr);
+    cells.push(`<div class="cal-day ${isToday&&!isSelected?'today':''} ${isSelected?'selected':''} ${hasTasks&&!isSelected?'has-task':''}"
+      onclick="selectCalDate('${dateStr}')">${d}</div>`);
+  }
+  // Next month fill
+  const remaining = 42 - cells.length;
+  for (let d = 1; d <= remaining; d++) {
+    const dateStr = `${y}-${pad(m+2)}-${pad(d)}`;
+    cells.push(`<div class="cal-day other-month ${taskDates.has(dateStr)?'has-task':''}">${d}</div>`);
+  }
+
+  grid.innerHTML = cells.join('');
+}
+
+function calPrev() {
+  calDate = new Date(calDate.getFullYear(), calDate.getMonth() - 1, 1);
+  renderCalendar();
+}
+function calNext() {
+  calDate = new Date(calDate.getFullYear(), calDate.getMonth() + 1, 1);
+  renderCalendar();
+}
+
+function selectCalDate(dateStr) {
+  calSelectedDate = dateStr;
+  renderCalendar();
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  document.getElementById('cal-selected-label').textContent =
+    `${DAYS[dt.getDay()]}, ${d} ${SHORT_MONTHS[m-1]} ${y}`;
+
+  const dayTasks = tasks.filter(t => t.date === dateStr);
+  const calList = document.getElementById('cal-tasks-list');
+  if (!dayTasks.length) {
+    calList.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:16px 0;">No tasks on this day.</div>`;
+    return;
+  }
+  calList.innerHTML = dayTasks.map(t => taskCard(t, true)).join('');
+}
+
+// ─── EXPORT / IMPORT ─────────────────────────────────────────
+function exportJSON() {
+  if (!tasks.length) { showToast('⚠️ No tasks to export', 'error'); return; }
+  const data = JSON.stringify({ version:2, exportedAt: new Date().toISOString(), tasks }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chronosync_backup_${todayIST()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('📦 Tasks exported as JSON', 'success');
+}
+
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      let imported = [];
+      if (Array.isArray(parsed)) imported = parsed;
+      else if (parsed.tasks && Array.isArray(parsed.tasks)) imported = parsed.tasks;
+      else throw new Error('Invalid format');
+
+      // Merge (avoid duplicates by id)
+      const existingIds = new Set(tasks.map(t => t.id));
+      let added = 0;
+      imported.forEach(t => {
+        if (!existingIds.has(t.id)) {
+          tasks.push(t);
+          added++;
+        }
+      });
+      saveTasks();
+      renderAll();
+      renderCalendar();
+      showToast(`📥 Imported ${added} task(s)`, 'success');
+    } catch {
+      showToast('❌ Invalid JSON file', 'error');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// ─── TOAST ───────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const icons = { success:'#4ade80', error:'#e85858', info:'#60a5fa' };
+  const color = icons[type] || icons.info;
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.style.borderLeft = `3px solid ${color}`;
+  toast.innerHTML = `<span>${msg}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('out');
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
+
+// ─── UTILS ───────────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function isInputFocused() {
+  const tag = document.activeElement?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+// Responsive: update cal grid layout
+function updateCalLayout() {
+  const wrap = document.getElementById('cal-grid-wrap');
+  if (!wrap) return;
+  if (window.innerWidth < 640) wrap.style.gridTemplateColumns = '1fr';
+  else wrap.style.gridTemplateColumns = '1fr 1fr';
+}
+updateCalLayout();
+window.addEventListener('resize', updateCalLayout);
+
+// Kick off next-task countdown every second
+setInterval(updateNextTaskCountdown, 1000);
+
+</script>
+</body>
+</html>
